@@ -12,22 +12,22 @@ import { chromium } from "playwright";
     waitUntil: "domcontentloaded",
   });
 
-  const TARGET_PRICE = 800;
+  const TARGET_PRICE = 1000;
 
   while (true) {
     console.log("Clicking Default...");
 
     // 1. Click "Default" with retry logic
     try {
-      await page.getByText("Default", { exact: true }).click({ timeout: 1000 });
+      await page.getByText("Default", { exact: true }).click({ timeout: 3000 });
     } catch (err) {
       console.log("⚠️ Could not find Default button, waiting and retrying...");
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(2000);
       continue;
     }
 
     // 2. Wait for listings to load
-    await page.waitForSelector(".item", { timeout: 2000 });
+    await page.waitForSelector(".item", { timeout: 5000 });
 
     console.log("Scanning all listings (visible and hidden)...");
 
@@ -52,28 +52,17 @@ import { chromium } from "playwright";
       if (priceNumber === TARGET_PRICE) {
         console.log("₹1000 found — clicking Buy immediately...");
 
-        // Click the buy button and verify it was clicked
-        const clickResult = await row
+        await row
           .evaluate((el) => {
-            const buyButton = el.querySelector("button.van-button--primary");
-            console.log("Button found:", !!buyButton);
-            if (buyButton) {
-              buyButton.click();
-              return true;
-            }
-            return false;
+            const buyButton = el.querySelector("button");
+            if (buyButton) buyButton.click();
           })
-          .catch((err) => {
-            console.log("Error clicking button:", err);
-            return false;
-          });
+          .catch(() => null);
 
-        console.log("Click result:", clickResult);
+        // Check for payment account page immediately with shorter wait
+        await page.waitForTimeout(500);
 
-        // Wait longer for page to navigate
-        await page.waitForTimeout(1500);
-
-        // Check for payment account page
+        // Check if "Please select payment account" is on the page
         const paymentAccountText = await page
           .evaluate(() => {
             const divs = document.querySelectorAll("div");
@@ -96,14 +85,14 @@ import { chromium } from "playwright";
             "❌ Payment page not found. Going back to search for more ₹1000 items...",
           );
           await page.goBack();
-          await page.waitForTimeout(500);
+          await page.waitForTimeout(1000);
           break; // Break inner loop, continue outer loop
         }
       }
     }
 
     console.log("₹1000 not found, retrying...");
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(1000);
   }
 })();
 
