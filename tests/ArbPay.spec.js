@@ -54,8 +54,8 @@ import { chromium } from "playwright";
   const loginBtn = page.getByRole("button", { name: "Log In" });
 
   // Prefer environment variables for credentials
-  const PHONE = process.env.PHONE || "phone number";
-  const PASSWORD = process.env.PASSWORD || "password";
+  const PHONE = process.env.PHONE || "9911105153";
+  const PASSWORD = process.env.PASSWORD || "Afzal123";
 
   await humanType(page, phoneInput, PHONE);
   await page.waitForTimeout(rnd(200, 600));
@@ -79,76 +79,31 @@ import { chromium } from "playwright";
     // continue anyway to preserve original flow
   }
 
-  // Helper to close a post-login prompt by header text, with multiple fallback selectors
-  async function closePromptIfPresent(headerText) {
-    const prompt = page.locator(`div.promptHeader:has-text("${headerText}")`);
-    if ((await prompt.count()) > 0) {
-      console.log(`✓ Found prompt: "${headerText}" — attempting to close`);
+  // Close all visible prompts by clicking the close div
+  console.log("Closing post-login prompts...");
+  let closeCount = 0;
+  while (closeCount < 5) {
+    // Use CSS selector: div with both classes van-haptics-feedback AND close
+    const closeBtn = page.locator("div.van-haptics-feedback.close").first();
+    const count = await closeBtn.count().catch(() => 0);
 
-      // Try multiple close button selectors in order (most specific to most general)
-      const closeSelectors = [
-        "div.close:visible", // Simple close div
-        'button:has-text("Close"):visible', // Close button element
-        '[class*="close"]:visible', // Any element with 'close' in class
-        "div.van-haptics-feedback:visible", // Haptics feedback div
-        "div.promptHeader ~ div button", // Button sibling to header
-      ];
-
-      for (const selector of closeSelectors) {
-        const closeBtn = page.locator(selector);
-        const count = await closeBtn.count();
-        if (count > 0) {
-          console.log(
-            `  ✓ Close button found using selector: "${selector}" (${count} elements)`,
-          );
-          try {
-            await humanClick(page, closeBtn.first());
-            console.log(`  ✓ Closed "${headerText}" successfully`);
-            await page.waitForTimeout(rnd(400, 1200)); // Longer wait for DOM to settle
-            return true;
-          } catch (clickErr) {
-            console.log(
-              `  ✗ Failed to click with selector "${selector}":`,
-              clickErr.message,
-            );
-          }
-        }
-      }
-
-      // If no close button found, try escape key as fallback
-      console.log(`  ! No close button found; attempting ESC key...`);
-      try {
-        await page.keyboard.press("Escape");
-        await page.waitForTimeout(rnd(400, 1200));
-        console.log(`  ✓ ESC key pressed for "${headerText}"`);
-        return true;
-      } catch (escErr) {
-        console.log(`  ✗ ESC key failed:`, escErr.message);
-      }
-
-      console.log(
-        `  ✗ Could not close prompt "${headerText}" — continuing anyway`,
-      );
-      return false;
+    if (count === 0) {
+      console.log(`No more close buttons found after ${closeCount} closes`);
+      break;
     }
-    return false;
-  }
 
-  // Attempt to close known prompts in order, if they appear
-  const prompts = [
-    "Special USDT Rate",
-    "🚨⚠️ Scammer Alert! ⚠️🚨",
-    "🎉 AR Wallet Bonus Event",
-    "💡 AR Wallet Tips",
-  ];
-
-  for (const p of prompts) {
     try {
-      await closePromptIfPresent(p);
+      console.log(`Clicking close button ${closeCount + 1}...`);
+      await closeBtn.click();
+      closeCount++;
+      await page.waitForTimeout(rnd(500, 1000));
+      console.log(`✓ Closed prompt ${closeCount}`);
     } catch (e) {
-      console.log("Error while handling prompt", p, e);
+      console.log(`✗ Failed to close:`, e.message);
+      break;
     }
   }
+  console.log(`Closed ${closeCount} prompt(s) total`);
 
   // After login verification, wait a short, human-like pause and
   // click the in-page "Buy ARB" header if present. Fall back to direct navigation.
@@ -248,11 +203,10 @@ import { chromium } from "playwright";
           return;
         } else {
           console.log(
-            "❌ Payment page not found. Going back to search for more ₹1000 items...",
+            "❌ Payment page not found. Continuing to scan more listings...",
           );
-          await page.goBack();
-          await page.waitForTimeout(500);
-          break; // Break inner loop, continue outer loop
+          // Don't go back; continue to next item in the loop
+          continue;
         }
       }
     }
