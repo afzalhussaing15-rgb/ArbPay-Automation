@@ -54,8 +54,8 @@ import { chromium } from "playwright";
   const loginBtn = page.getByRole("button", { name: "Log In" });
 
   // Prefer environment variables for credentials
-  const PHONE = process.env.PHONE || "9911105153";
-  const PASSWORD = process.env.PASSWORD || "Afzal123";
+  const PHONE = process.env.PHONE || "phone_no";
+  const PASSWORD = process.env.PASSWORD || "password";
 
   await humanType(page, phoneInput, PHONE);
   await page.waitForTimeout(rnd(200, 600));
