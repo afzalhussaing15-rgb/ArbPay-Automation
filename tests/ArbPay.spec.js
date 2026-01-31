@@ -63,10 +63,7 @@ import { chromium } from "playwright";
   await page.waitForTimeout(rnd(400, 900));
   await humanClick(page, loginBtn);
 
-  // Verify successful login by checking the URL becomes /#/home
-  // and that one of the post-login DOM elements is present:
-  // - <div class="promptHeader">Special USDT Rate</div>
-  // - <h5 class="title">Buy ARB</h5>
+  // Verify successful login by checking /#/home and post-login UI elements
   try {
     await page.waitForURL("**/#/home", { timeout: 10000 });
     await page.waitForSelector(
