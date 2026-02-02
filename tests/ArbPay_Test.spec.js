@@ -79,7 +79,7 @@ import { chromium } from "playwright";
   // Close all visible prompts by clicking the close div
   console.log("Closing post-login prompts...");
   let closeCount = 0;
-  while (true) {
+  while (closeCount < 5) {
     // Use CSS selector: div with both classes van-haptics-feedback AND close
     const closeBtn = page.locator("div.van-haptics-feedback.close").first();
     const count = await closeBtn.count().catch(() => 0);
@@ -104,28 +104,13 @@ import { chromium } from "playwright";
 
   // After login verification, wait a short, human-like pause and
   // click the in-page "Buy ARB" header if present. Fall back to direct navigation.
-  console.log("Waiting for page to stabilize after closing prompts...");
-  await page.waitForTimeout(rnd(1500, 2500));
-
-  console.log("Current URL:", page.url());
-  console.log("Checking for Buy ARB element...");
+  await page.waitForTimeout(rnd(500, 1500));
 
   const buyH5 = page.locator('h5.title:has-text("Buy ARB")');
-  const buyH5Count = await buyH5.count().catch(() => 0);
-  console.log(`Buy ARB element count: ${buyH5Count}`);
-
-  if (buyH5Count > 0) {
+  if ((await buyH5.count()) > 0) {
     console.log('Clicking in-page "Buy ARB" element to reach buy page...');
-    try {
-      await humanClick(page, buyH5.first());
-      await page.waitForTimeout(rnd(1000, 1800));
-    } catch (e) {
-      console.log("Failed to click Buy ARB:", e.message);
-      console.log("Falling back to direct navigation...");
-      await page.goto("https://arbpay.me/#/buy/arb", {
-        waitUntil: "domcontentloaded",
-      });
-    }
+    await humanClick(page, buyH5.first());
+    await page.waitForTimeout(rnd(500, 1200));
   } else {
     console.log(
       'In-page "Buy ARB" not found — navigating to /#/buy/arb as fallback',
@@ -135,11 +120,14 @@ import { chromium } from "playwright";
     });
   }
 
-  const TARGET_PRICE = 1000;
+  // Set the target price range
+  const MIN_PRICE = 700;
+  const MAX_PRICE = 1000;
 
   while (true) {
     console.log("Clicking Default...");
 
+    // 1. Click "Default" with retry logic
     try {
       await page.getByText("Default", { exact: true }).click({ timeout: 1000 });
     } catch (err) {
@@ -148,63 +136,85 @@ import { chromium } from "playwright";
       continue;
     }
 
-    // Ultra-low latency: single evaluate() handles scan, match, click, and confirmation
-    const result = await page.evaluate((targetPrice) => {
-      // 1. Get all items in a single DOM traversal
-      const items = document.querySelectorAll(".item");
+    // 2. Wait for listings to load
+    await page.waitForSelector(".item", { timeout: 2000 });
 
-      for (const item of items) {
-        // 2. Extract and parse price
-        const amountDiv = item.querySelector(".amount");
-        if (!amountDiv) continue;
+    console.log("Scanning all listings (visible and hidden)...");
 
-        const priceText = amountDiv.innerText;
-        const priceNumber = Number(
-          priceText.replace("₹", "").replace(/,/g, "").trim(),
-        );
+    const rows = await page.$$(".item");
 
-        // 3. Match target price
-        if (priceNumber === targetPrice) {
-          // 4. Click the button immediately
-          const buyButton = item.querySelector("button.van-button--primary");
-          if (buyButton) {
-            buyButton.click();
-            return { found: true, price: priceNumber };
-          }
-        }
-      }
+    for (const row of rows) {
+      // Extract price text from .amount div
+      const priceText = await row
+        .evaluate((el) => {
+          const amountDiv = el.querySelector(".amount");
+          return amountDiv ? amountDiv.innerText : null;
+        })
+        .catch(() => null);
 
-      return { found: false };
-    }, TARGET_PRICE);
+      if (!priceText) continue;
 
-    if (result.found) {
-      console.log(
-        `✅ ₹${result.price} found and clicked! Waiting for navigation...`,
+      const priceNumber = Number(
+        priceText.replace("₹", "").replace(/,/g, "").trim(),
       );
 
-      // Wait for page to navigate
-      await page.waitForTimeout(800);
-
-      // Single evaluate to check for payment page
-      const onPaymentPage = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll("div")).some((div) =>
-          div.innerText.includes("Please select payment account"),
-        );
-      });
-
-      if (onPaymentPage) {
+      // Buy if price is within the range
+      if (priceNumber >= MIN_PRICE && priceNumber <= MAX_PRICE) {
         console.log(
-          "✅ Payment account selection page found! Script stopping.",
+          `₹${priceNumber} found in range — clicking Buy immediately...`,
         );
-        return;
-      } else {
-        console.log("❌ Payment page not found. Re-scanning...");
-        continue;
+
+        // Click the buy button and verify it was clicked
+        const clickResult = await row
+          .evaluate((el) => {
+            const buyButton = el.querySelector("button.van-button--primary");
+            if (buyButton) {
+              buyButton.click();
+              return true;
+            }
+            return false;
+          })
+          .catch((err) => {
+            console.log("Error clicking button:", err);
+            return false;
+          });
+
+        console.log("Click result:", clickResult);
+
+        // Wait longer for page to navigate
+        await page.waitForTimeout(1500);
+
+        // Check for payment account page
+        const paymentAccountText = await page
+          .evaluate(() => {
+            const divs = document.querySelectorAll("div");
+            for (const div of divs) {
+              if (div.innerText.includes("Please select payment account")) {
+                return true;
+              }
+            }
+            return false;
+          })
+          .catch(() => false);
+        if (paymentAccountText) {
+          console.log(
+            "✅ Payment account selection page found! Script stopping.",
+          );
+          return;
+        } else {
+          console.log(
+            "❌ Payment page not found. Continuing to scan more listings...",
+          );
+          // Don't go back; continue to next item in the loop
+          continue;
+        }
       }
     }
 
-    console.log("₹1000 not found, retrying...");
-    await page.waitForTimeout(200); // Reduced from 300
+    console.log(
+      `No listings found in range ₹${MIN_PRICE}-₹${MAX_PRICE}, retrying...`,
+    );
+    await page.waitForTimeout(300);
   }
 })();
 
